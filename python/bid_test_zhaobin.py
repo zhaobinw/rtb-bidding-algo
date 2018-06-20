@@ -27,6 +27,12 @@ def split_train_test_data(data_dir, train_size):
 
 
 def calc_m_pdf(m_counter, laplace=1):
+
+	# m(delta, x): market price p.d.f. given by x,
+	# where delta is market price, x is feature vector, and m is prob
+	# if a(bid) > delta, then win the auction else lose
+	# m_pdf 是市场bid_price的分布。由实际市场获胜价格统计得出。
+
 	m_pdf = [0] * len(m_counter)
 	sum = 0
 	for i in range(0, len(m_counter)):
@@ -35,39 +41,6 @@ def calc_m_pdf(m_counter, laplace=1):
 		m_pdf[i] = (m_counter[i] + laplace) / (
 			sum + len(m_counter) * laplace)
 	return m_pdf
-
-
-def run_lb_bid_process(auction_in, N, B, theta_avg, base_bid):
-	auction = 0
-	imp = 0
-	clk = 0
-	cost = 0
-	episode = 1
-	n = N
-	b = B
-	for line in auction_in:
-		line = line.strip().split(" ")
-		click = int(line[0])
-		price = int(line[1])
-		theta = float(line[2])
-		a = 1.0 * theta / theta_avg * base_bid
-		a = min(int(a), min(b, max_bid))
-		if a >= price:
-			# print(base_bid, a, np.log(theta / theta_avg))
-			imp += 1
-			if click == 1:
-				clk += 1
-			b -= price
-			cost += price
-		n -= 1
-		auction += 1
-
-		if n == 0:
-			episode += 1
-			n = N
-			b = B
-	return auction, imp, clk, cost
-
 
 def run_lb(camp_info, train_dir, test_dir, N, B):
 
@@ -80,7 +53,7 @@ def run_lb(camp_info, train_dir, test_dir, N, B):
 		for bid in range(bid_step, max_bid + bid_step, bid_step):
 			auction_in_train = open(train_dir, "r")
 			(auction, imp, clk, cost) = \
-				run_lb_bid_process(auction_in_train, N, B, theta_avg, bid)
+				run_bid_process(auction_in_train, N, B, theta_avg, bid)
 
 			bid_performance[bid] = [auction, imp, clk, cost]
 			if clk > opt_obj:
@@ -92,16 +65,49 @@ def run_lb(camp_info, train_dir, test_dir, N, B):
 		print('Linear Bid Algo:', opt_bid, bid_performance[opt_bid], 'selected')
 		return opt_bid
 
+	def run_bid_process(auction_in, N, B, theta_avg, base_bid):
+		auction = 0
+		imp = 0
+		clk = 0
+		cost = 0
+		episode = 1
+		n = N
+		b = B
+		for line in auction_in:
+			line = line.strip().split(" ")
+			click = int(line[0])
+			price = int(line[1])
+			theta = float(line[2])
+			a = 1.0 * np.log((theta + theta_avg) / theta_avg) * base_bid
+			a = min(int(a), min(b, max_bid))
+			if a >= price:
+				# print(base_bid, a, np.log(theta / theta_avg))
+				imp += 1
+				if click == 1:
+					clk += 1
+				b -= price
+				cost += price
+			n -= 1
+			auction += 1
+			if n == 0:
+				episode += 1
+				n = N
+				b = B
+		return auction, imp, clk, cost
+
 	theta_avg = camp_info["clk_train"] / camp_info["imp_train"]
 	opt_bid = get_opt_base_bid()
 	auction_in_test = open(test_dir, "r")
 	(auction, imp, clk, cost) = \
-		run_lb_bid_process(auction_in_test, N, B, theta_avg, opt_bid)
+		run_bid_process(auction_in_test, N, B, theta_avg, opt_bid)
 
 	return auction, imp, clk, cost
 
 
 def calc_optimal_value_function_with_approximation_i(camp_info, N, B, m_pdf):
+
+	# Value-Iteration
+	# Dynamic Programming 方法，计算 N * B 大小的2D Q-table
 
 	# calc avg_theta, and in this exp, theta is ctr
 	theta_avg = camp_info["clk_train"] / camp_info["imp_train"]
@@ -192,6 +198,16 @@ def run_rlb(Q_table, auction_in, N, B):
 	return auction, imp, clk, cost
 
 
+def print_output(setting, auction, imp, clk, cost):
+	win_rate = imp / auction * 100
+	cpm = (cost / 1000) / imp * 1000
+	ecpc = (cost / 1000) / clk
+	obj = clk
+	log = "{:<30}\t {:>10}\t {:>8}\t {:>10}\t {:>8}\t {:>8}\t {:>8.2f}%\t {:>8.2f}\t {:>8.2f}" \
+		.format(setting, obj, auction, imp, clk, cost, win_rate, cpm, ecpc)
+	print(log)
+
+
 def main():
 
 	log = "{:<30}\t {:>10}\t {:>8}\t {:>10}\t {:>8}\t {:>8}\t {:>9}\t {:>8}\t {:>8}" \
@@ -215,11 +231,9 @@ def main():
 		print('train budget:', B, B * train_num / 1000)
 		print('test budget:', B, B * test_num / 1000)
 
-		# calculate m_pdf
-		# m(delta, x): market price p.d.f. given by x,
-		# where delta is market price, x is feature vector, and m is prob
-		# if a(bid) > delta, then win the auction else lose
-		# m_pdf 是市场bid_price的分布。由实际市场获胜价格统计得出。
+		# -----------------------------------------
+		# Calculate m_pdf
+		# -----------------------------------------
 		m_pdf = calc_m_pdf(camp_info["price_counter_train"])
 
 		# -----------------------------------------
@@ -228,29 +242,15 @@ def main():
 		setting = "camp={}, algo={}".format(camp, "lb")
 		(auction, imp, clk, cost) = run_lb(camp_info, data_path + camp + "/train_data.txt",
 			   data_path + camp + "/train_data.txt", N, B)
-		win_rate = imp / auction * 100
-		cpm = (cost / 1000) / imp * 1000
-		ecpc = (cost / 1000) / clk
-		obj = clk
-		log = "{:<30}\t {:>10}\t {:>8}\t {:>10}\t {:>8}\t {:>8}\t {:>8.2f}%\t {:>8.2f}\t {:>8.2f}" \
-			.format(setting, obj, auction, imp, clk, cost, win_rate, cpm, ecpc)
-		print(log)
+		print_output(setting, auction, imp, clk, cost)
 
 		# -----------------------------------------
 		# Reinforcement Learning Bidding Algo - RLB
 		# -----------------------------------------
 		setting = "camp={}, algo={}".format(camp, "rlb")
-		# Value-Iteration
-		# Dynamic Programming 方法，计算 N * B 大小的2D Q-table
 		rlb_q_table = calc_optimal_value_function_with_approximation_i(camp_info, N, B, m_pdf)
 		(auction, imp, clk, cost) = run_rlb(rlb_q_table, auction_in_test, N, B)
-		win_rate = imp / auction * 100
-		cpm = (cost / 1000) / imp * 1000
-		ecpc = (cost / 1000) / clk
-		obj = clk
-		log = "{:<30}\t {:>10}\t {:>8}\t {:>10}\t {:>8}\t {:>8}\t {:>8.2f}%\t {:>8.2f}\t {:>8.2f}" \
-			.format(setting, obj, auction, imp, clk, cost, win_rate, cpm, ecpc)
-		print(log)
+		print_output(setting, auction, imp, clk, cost)
 
 
 if __name__ == "__main__":
