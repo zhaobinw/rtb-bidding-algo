@@ -1,0 +1,1 @@
+net_type=nn	net_argv=[4, [2, 30, 15, 1], 'tanh']	init_path=None	init_argv=[('uniform', -0.001, 0.001, 35243), ('zero', None), ('uniform', -0.001, 0.001, 52719), ('zero', None), ('uniform', -0.0007959634855805408, 0.0007959634855805408, 47768), ('zero', None)]	dim_argv=[2]	batch_size=10000	opt_argv=['adam', 3e-05, 1e-08, 'sum']

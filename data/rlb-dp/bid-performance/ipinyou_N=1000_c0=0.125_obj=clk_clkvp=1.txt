@@ -1,0 +1,2 @@
+setting                                                                         	 objective	 auction	impression	   click	    cost	 win-rate	     CPM	    eCPC
+ipinyou, camp=1458, algo=mcpc, N=1000, c0=0.125, obj=clk, clk_v=86552           	       271	  350000	     62111	     271	 1723792	   17.75%	   27.75	    6.36
